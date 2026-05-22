@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "matches": {
+      ".read": true,
+      ".write": true
+    },
+    "players": {
+      ".read": true,
+      ".write": true
+    },
+    "teams": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}
