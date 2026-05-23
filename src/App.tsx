@@ -399,9 +399,9 @@ export default function App() {
 
   // Initial trigger for startup tone
   useEffect(() => {
-    setAllPlayers(getPlayers());
-    setAllMatches(getMatches());
-    setAllTeams(getTeams());
+    getPlayers().then(setAllPlayers);
+    getMatches().then(setAllMatches);
+    getTeams().then(setAllTeams);
   }, []);
 
   const alert = React.useCallback((message: string) => {
@@ -435,8 +435,8 @@ export default function App() {
   useEffect(() => {
     if (currentPage !== 'live_view' || !viewMatch?.id) return;
 
-    const refreshLiveScorecard = () => {
-      const matches = getMatches();
+    const refreshLiveScorecard = async () => {
+      const matches = await getMatches();
       setAllMatches(matches);
       const freshMatch = matches.find(match => match.id === viewMatch.id);
       if (freshMatch) {
@@ -472,15 +472,15 @@ export default function App() {
     setCurrentPage('home');
   };
 
-  const handleAccountSubmit = () => {
+  const handleAccountSubmit = async () => {
     playClickSound();
     const result = accountMode === 'signup'
-      ? createPlayerAccount(accountName)
-      : loginPlayerAccount(accountName);
+      ? await createPlayerAccount(accountName)
+      : await loginPlayerAccount(accountName);
     setAccountMessage(result.message);
     if (result.ok && result.player) {
       setCurrentUser(result.player);
-      setAllPlayers(getPlayers());
+      getPlayers().then(setAllPlayers);
       setAccountName('');
       setCurrentPage('player_profile');
     }
@@ -512,14 +512,14 @@ export default function App() {
     setTeamSearch('');
   };
 
-  const handleCreateAndChooseTeam = () => {
+  const handleCreateAndChooseTeam = async () => {
     playClickSound();
-    const result = createTeam(newTeamName);
+    const result = await createTeam(newTeamName);
     if (!result.ok || !result.team) {
       alert(result.message);
       return;
     }
-    setAllTeams(getTeams());
+    getTeams().then(setAllTeams);
     chooseTeamForSlot(result.team.name);
   };
 
@@ -553,7 +553,7 @@ export default function App() {
     };
 
     setCurrentMatch(newMatchSkeleton);
-    setAllTeams(getTeams());
+    getTeams().then(setAllTeams);
     setCurrentPage('setup_teams');
   };
 
@@ -572,29 +572,31 @@ export default function App() {
   };
 
   // Add players in page 1.2
-  const handleAddExistingPlayer = (team: 'A' | 'B', playerName: string) => {
+  const handleAddExistingPlayer = async (team: 'A' | 'B', playerName: string) => {
     playClickSound();
     if (!currentMatch) return;
-    const existingPlayer = getPlayers().find(p => p.name.toLowerCase() === playerName.trim().toLowerCase());
+    const players = await getPlayers();
+    const existingPlayer = players.find(p => p.name.toLowerCase() === playerName.trim().toLowerCase());
     if (!existingPlayer) return;
     if (team === 'A') {
       if (currentMatch.teamAPlayers.includes(existingPlayer.name)) return;
       setCurrentMatch({ ...currentMatch, teamAPlayers: [...currentMatch.teamAPlayers, existingPlayer.name] });
-      addPlayerToTeamRecord(existingPlayer.name, currentMatch.teamA);
+      await addPlayerToTeamRecord(existingPlayer.name, currentMatch.teamA);
       setPlayerInputA('');
     } else {
       if (currentMatch.teamBPlayers.includes(existingPlayer.name)) return;
       setCurrentMatch({ ...currentMatch, teamBPlayers: [...currentMatch.teamBPlayers, existingPlayer.name] });
-      addPlayerToTeamRecord(existingPlayer.name, currentMatch.teamB);
+      await addPlayerToTeamRecord(existingPlayer.name, currentMatch.teamB);
       setPlayerInputB('');
     }
-    setAllPlayers(getPlayers());
+    getPlayers().then(setAllPlayers);
   };
 
-  const handleAddPlayer = (team: 'A' | 'B') => {
+  const handleAddPlayer = async (team: 'A' | 'B') => {
     playClickSound();
     const nameStr = (team === 'A' ? playerInputA : playerInputB).trim().replace(/\s+/g, ' ');
-    const existingPlayer = getPlayers().find(p => p.name.toLowerCase() === nameStr.toLowerCase());
+    const players = await getPlayers();
+    const existingPlayer = players.find(p => p.name.toLowerCase() === nameStr.toLowerCase());
     if (!existingPlayer) {
       alert('Only existing player accounts can be added. Ask player to create/login account first.');
       return;
@@ -609,7 +611,7 @@ export default function App() {
       }
       const updatedPlayers = [...currentMatch.teamAPlayers, existingPlayer.name];
       setCurrentMatch({ ...currentMatch, teamAPlayers: updatedPlayers });
-      addPlayerToTeamRecord(existingPlayer.name, currentMatch.teamA);
+      await addPlayerToTeamRecord(existingPlayer.name, currentMatch.teamA);
       setPlayerInputA('');
     } else {
       if (currentMatch.teamBPlayers.some(p => p.toLowerCase() === nameStr.toLowerCase())) {
@@ -618,12 +620,11 @@ export default function App() {
       }
       const updatedPlayers = [...currentMatch.teamBPlayers, existingPlayer.name];
       setCurrentMatch({ ...currentMatch, teamBPlayers: updatedPlayers });
-      addPlayerToTeamRecord(existingPlayer.name, currentMatch.teamB);
+      await addPlayerToTeamRecord(existingPlayer.name, currentMatch.teamB);
       setPlayerInputB('');
     }
 
-    // Refresh memory database for visual green coloring check
-    setAllPlayers(getPlayers());
+    getPlayers().then(setAllPlayers);
   };
 
   const handleNextFromPlayers = () => {
@@ -647,7 +648,7 @@ export default function App() {
     }
 
     // Refresh player list from DB
-    setAllPlayers(getPlayers());
+    getPlayers().then(setAllPlayers);
     setCurrentPage('setup_settings_1');
   };
 
@@ -739,7 +740,7 @@ export default function App() {
     });
   };
 
-  const handleNextFromBowler = () => {
+  const handleNextFromBowler = async () => {
     playClickSound();
     if (!currentMatch || !currentMatch.currentBowler) {
       alert('Please select a Bowler.');
@@ -748,8 +749,8 @@ export default function App() {
 
     // Second innings is already registered; after choosing striker/non-striker/bowler, return to scoring.
     if (currentMatch.status === 'live' && currentMatch.currentInningIndex === 2 && currentMatch.secondInning) {
-      saveMatch(currentMatch);
-      setAllMatches(getMatches());
+      await saveMatch(currentMatch);
+      getMatches().then(setAllMatches);
       setCurrentPage('scoring');
       return;
     }
@@ -758,7 +759,7 @@ export default function App() {
   };
 
   // Page 1.8 Final verification & initialization of actual Inning objects before permanent registration
-  const handleStartScoringActiveMatch = () => {
+  const handleStartScoringActiveMatch = async () => {
     if (!currentMatch) return;
     playSuccessSound();
 
@@ -839,10 +840,10 @@ export default function App() {
 
     setCurrentMatch(initializedMatch);
     setMatchHistory([]);
-    saveMatch(initializedMatch);
-    assignMatchToPlayersAndTeams(initializedMatch);
-    setAllMatches(getMatches());
-    setAllPlayers(getPlayers());
+    await saveMatch(initializedMatch);
+    await assignMatchToPlayersAndTeams(initializedMatch);
+    getMatches().then(setAllMatches);
+    getPlayers().then(setAllPlayers);
     setCurrentPage('scoring');
   };
 
@@ -892,7 +893,7 @@ export default function App() {
     setMatchHistory(prev => [...prev, copy]);
   };
 
-  const handleUndoLastBall = () => {
+  const handleUndoLastBall = async () => {
     playClickSound();
     if (matchHistory.length === 0) {
       alert("No balls left in the scoring history to undo!");
@@ -901,9 +902,9 @@ export default function App() {
     const previousState = matchHistory[matchHistory.length - 1];
     setMatchHistory(prev => prev.slice(0, prev.length - 1));
     setCurrentMatch(previousState);
-    saveMatch(previousState);
-    setAllMatches(getMatches());
-    setAllPlayers(getPlayers());
+    await saveMatch(previousState);
+    getMatches().then(setAllMatches);
+    getPlayers().then(setAllPlayers);
   };
 
   const updateActiveInning = (updatedInning: InningState, extraPartialChanges: Partial<MatchData> = {}) => {
@@ -917,8 +918,8 @@ export default function App() {
     }
 
     setCurrentMatch(nextMatchState);
-    saveMatch(nextMatchState);
-    setAllMatches(getMatches());
+    saveMatch(nextMatchState); // fire and forget is ok here
+    getMatches().then(setAllMatches);
   };
 
   // Helper routine to change strike
@@ -1559,7 +1560,7 @@ export default function App() {
     return availablePlayers.length - inning.wickets;
   };
 
-  const triggerAutomaticInningEndOrMatchEnd = (finalInningState: InningState) => {
+  const triggerAutomaticInningEndOrMatchEnd = async (finalInningState: InningState) => {
     if (!currentMatch) return;
 
     // If overs are completed, show nice confirmation modal instead of alert
@@ -1615,8 +1616,8 @@ export default function App() {
 
       pushToHistory();
       setCurrentMatch(updatedMatch);
-      saveMatch(updatedMatch);
-      setAllMatches(getMatches());
+      await saveMatch(updatedMatch);
+      getMatches().then(setAllMatches);
       setCurrentPage('start_second_inning');
     } else {
       // 2nd inning ended -> compute winner
@@ -1635,7 +1636,7 @@ export default function App() {
     }
   };
 
-  const finishMatchWithWinner = (winnerTeam: string, desc: string, matchOverride?: MatchData) => {
+  const finishMatchWithWinner = async (winnerTeam: string, desc: string, matchOverride?: MatchData) => {
     const matchToFinish = matchOverride || currentMatch;
     if (!matchToFinish) return;
     
@@ -1646,39 +1647,32 @@ export default function App() {
       ...matchToFinish.teamBPlayers
     ]);
 
-    const updateCareerStatsForInning = (inn: InningState | undefined) => {
+    const updateCareerStatsForInning = async (inn: InningState | undefined) => {
       if (!inn) return;
-      // Save real batting stats — only what the player actually scored
-      Object.keys(inn.batsmen).forEach(name => {
+      for (const name of Object.keys(inn.batsmen)) {
         const b = inn.batsmen[name];
         if (b.runs > 0 || b.balls > 0) {
-          updatePlayerStatsAfterMatch(name, {
-            runs: b.runs,
-            ballsPlayed: b.balls,
-            fours: b.fours,
-            sixes: b.sixes
+          await updatePlayerStatsAfterMatch(name, {
+            runs: b.runs, ballsPlayed: b.balls, fours: b.fours, sixes: b.sixes
           });
         }
-      });
-      // Save real bowling stats — only what the bowler actually delivered
-      Object.keys(inn.bowlers).forEach(name => {
+      }
+      for (const name of Object.keys(inn.bowlers)) {
         const bowl = inn.bowlers[name];
         if (bowl.overs > 0 || bowl.balls > 0 || bowl.wickets > 0) {
-          updatePlayerStatsAfterMatch(name, {
-            wickets: bowl.wickets,
-            ballsThrown: (bowl.overs * 6) + bowl.balls
+          await updatePlayerStatsAfterMatch(name, {
+            wickets: bowl.wickets, ballsThrown: (bowl.overs * 6) + bowl.balls
           });
         }
-      });
+      }
     };
 
-    updateCareerStatsForInning(matchToFinish.firstInning);
-    updateCareerStatsForInning(matchToFinish.secondInning);
+    await updateCareerStatsForInning(matchToFinish.firstInning);
+    await updateCareerStatsForInning(matchToFinish.secondInning);
 
-    // Increment matches played once per player who participated
-    allMatchPlayers.forEach(name => {
-      updatePlayerStatsAfterMatch(name, { matchPlayed: 1 });
-    });
+    for (const name of allMatchPlayers) {
+      await updatePlayerStatsAfterMatch(name, { matchPlayed: 1 });
+    }
 
     const finalized: MatchData = {
       ...matchToFinish,
@@ -1689,9 +1683,9 @@ export default function App() {
 
     pushToHistory();
     setCurrentMatch(finalized);
-    saveMatch(finalized);
-    setAllMatches(getMatches());
-    setAllPlayers(getPlayers());
+    await saveMatch(finalized);
+    getMatches().then(setAllMatches);
+    getPlayers().then(setAllPlayers);
     setCurrentPage('victory');
   };
 
@@ -1723,7 +1717,7 @@ export default function App() {
     setShowThreeDotsMenu(false);
   };
 
-  const handleConfirmMidMatchAddPlayer = () => {
+  const handleConfirmMidMatchAddPlayer = async () => {
     playClickSound();
     if (midMatchPlayerName.trim().length < 6) {
       alert("Player name must be at least 6 letters long.");
@@ -1731,7 +1725,8 @@ export default function App() {
     }
     if (!currentMatch) return;
 
-    const existingPlayer = getPlayers().find(p => p.name.toLowerCase() === midMatchPlayerName.trim().toLowerCase());
+    const allPlayersNow = await getPlayers();
+    const existingPlayer = allPlayersNow.find(p => p.name.toLowerCase() === midMatchPlayerName.trim().toLowerCase());
     if (!existingPlayer) {
       alert('Only existing player accounts can be added during a match.');
       return;
@@ -1743,12 +1738,12 @@ export default function App() {
     if (midMatchTeam === 'A') {
       if (!updatedMatch.teamAPlayers.includes(playerName)) {
         updatedMatch.teamAPlayers.push(playerName);
-        addPlayerToTeamRecord(playerName, updatedMatch.teamA);
+       await addPlayerToTeamRecord(playerName, updatedMatch.teamA);
       }
     } else {
       if (!updatedMatch.teamBPlayers.includes(playerName)) {
         updatedMatch.teamBPlayers.push(playerName);
-        addPlayerToTeamRecord(playerName, updatedMatch.teamB);
+        await addPlayerToTeamRecord(playerName, updatedMatch.teamB);
       }
     }
 
@@ -1771,9 +1766,9 @@ export default function App() {
     }
 
     setCurrentMatch(updatedMatch);
-    saveMatch(updatedMatch);
-    setAllPlayers(getPlayers());
-    setAllMatches(getMatches());
+    await saveMatch(updatedMatch);
+    getPlayers().then(setAllPlayers);
+    getMatches().then(setAllMatches);
     setShowAddPlayerModal(false);
     alert(`Successfully added ${playerName} to Team ${midMatchTeam === 'A' ? 'A' : 'B'} permanently.`);
   };
@@ -2262,7 +2257,7 @@ export default function App() {
               {/* 2. Show matches */}
               <button
                 onClick={() => {
-                  setAllMatches(getMatches());
+                  getMatches().then(setAllMatches);
                   navigateWithSound('show_matches');
                 }}
                 className="w-full text-left t-card p-4 rounded-xl border border-[var(--border-color)] transition group flex items-center justify-between shadow"
@@ -2286,7 +2281,7 @@ export default function App() {
               {/* 3. Stats */}
               <button
                 onClick={() => {
-                  setAllPlayers(getPlayers());
+                  getPlayers().then(setAllPlayers);
                   navigateWithSound('stats');
                 }}
                 className="w-full text-left t-card p-4 rounded-xl border border-[var(--border-color)] transition group flex items-center justify-between shadow"
@@ -2311,8 +2306,8 @@ export default function App() {
               <button
                 onClick={() => {
                   playClickSound();
-                  setAllPlayers(getPlayers());
-                  setAllTeams(getTeams());
+                  getPlayers().then(setAllPlayers);
+                  getTeams().then(setAllTeams);
                   setCurrentPage(currentUser ? 'player_profile' : 'player_login');
                 }}
                 className="w-full text-left t-card p-4 rounded-xl border border-[var(--border-color)] transition group flex items-center justify-between shadow"
@@ -2374,9 +2369,9 @@ export default function App() {
 
         {/* ==================== PLAYER PROFILE PAGE ==================== */}
         {currentPage === 'player_profile' && currentUser && (() => {
-          const latestUser = getPlayers().find(p => p.name.toLowerCase() === currentUser.name.toLowerCase()) || currentUser;
+          const latestUser = allPlayers.find(p => p.name.toLowerCase() === currentUser.name.toLowerCase()) || currentUser;
           const userTeams = latestUser.teams || [];
-          const userMatches = getMatches().filter(match =>
+          const userMatches = allMatches.filter(match =>
             match.teamAPlayers.includes(latestUser.name) || match.teamBPlayers.includes(latestUser.name)
           );
           return (
@@ -2566,7 +2561,7 @@ export default function App() {
 
                   <div className="space-y-1 max-h-56 overflow-y-auto pt-1">
                     {currentMatch.teamAPlayers.map((p, idx) => {
-                      const exists = checkPlayerExists(p);
+                      const exists = allPlayers.some(pl => pl.name.toLowerCase() === p.toLowerCase());
                       return (
                         <div 
                           key={idx} 
@@ -2631,7 +2626,7 @@ export default function App() {
 
                   <div className="space-y-1 max-h-56 overflow-y-auto pt-1">
                     {currentMatch.teamBPlayers.map((p, idx) => {
-                      const exists = checkPlayerExists(p);
+                      const exists = allPlayers.some(pl => pl.name.toLowerCase() === p.toLowerCase());
                       return (
                         <div 
                           key={idx} 
@@ -5195,7 +5190,7 @@ export default function App() {
                       playClickSound();
                       const updatedMatch = { ...currentMatch, currentStriker: name };
                       setCurrentMatch(updatedMatch);
-                      saveMatch(updatedMatch);
+                      saveMatch(updatedMatch); // fire and forget ok here
                       setShowNextBatsmanModal(false);
                       if (openBowlerAfterBatsman) {
                         setOpenBowlerAfterBatsman(false);
@@ -5256,7 +5251,7 @@ export default function App() {
                             currentBowler: undefined, isFreeHit: false
                           };
                           setCurrentMatch(updatedMatch);
-                          saveMatch(updatedMatch);
+                          saveMatch(updatedMatch); // fire and forget ok here
                           setCurrentPage('start_second_inning');
                         } else {
                           // End match with a proper result, not an overs-limit message.
