@@ -1,8 +1,6 @@
 import { PlayerStats, MatchData, TeamData } from '../types/cricket';
-
-const STORAGE_PLAYERS_KEY = 'cricket_scorer_players_db';
-const STORAGE_MATCHES_KEY = 'cricket_scorer_matches_db';
-const STORAGE_TEAMS_KEY = 'cricket_scorer_teams_db';
+import { db } from '../firebase';
+import { ref, set, get } from 'firebase/database';
 
 const DEFAULT_PLAYERS: PlayerStats[] = [
   { name: 'Virat Kohli', runs: 12840, wickets: 4, ballsPlayed: 11500, ballsThrown: 120, matchPlayed: 275, fours: 1210, sixes: 148 },
@@ -17,231 +15,190 @@ const DEFAULT_PLAYERS: PlayerStats[] = [
   { name: 'Babar Azam', runs: 5410, wickets: 0, ballsPlayed: 6100, ballsThrown: 0, matchPlayed: 110, fours: 512, sixes: 46 }
 ];
 
-export const getPlayers = (): PlayerStats[] => {
-  const stored = localStorage.getItem(STORAGE_PLAYERS_KEY);
-  if (!stored) {
-    localStorage.setItem(STORAGE_PLAYERS_KEY, JSON.stringify(DEFAULT_PLAYERS));
+const toKey = (name: string) => name.trim().replace(/\s+/g, '_').replace(/[.#$[\]]/g, '');
+
+export const getPlayers = async (): Promise<PlayerStats[]> => {
+  const snap = await get(ref(db, 'players'));
+  if (!snap.exists()) {
+    const updates: Record<string, PlayerStats> = {};
+    DEFAULT_PLAYERS.forEach(p => { updates[toKey(p.name)] = p; });
+    await set(ref(db, 'players'), updates);
     return DEFAULT_PLAYERS;
   }
-  try {
-    return JSON.parse(stored);
-  } catch (e) {
-    return DEFAULT_PLAYERS;
-  }
+  return Object.values(snap.val()) as PlayerStats[];
 };
 
-export const savePlayers = (players: PlayerStats[]) => {
-  localStorage.setItem(STORAGE_PLAYERS_KEY, JSON.stringify(players));
+export const savePlayers = async (players: PlayerStats[]): Promise<void> => {
+  const updates: Record<string, PlayerStats> = {};
+  players.forEach(p => { updates[toKey(p.name)] = p; });
+  await set(ref(db, 'players'), updates);
 };
 
 export const normalizePlayerName = (name: string) => name.trim().replace(/\s+/g, ' ');
-
 export const normalizeTeamName = (name: string) => name.trim().replace(/\s+/g, ' ').toUpperCase();
-
-export const isValidPlayerName = (name: string): boolean => {
-  const value = normalizePlayerName(name);
-  return value.length >= 2;
-};
-
+export const isValidPlayerName = (name: string): boolean => normalizePlayerName(name).length >= 2;
 export const isValidTeamName = (name: string): boolean => {
-  const value = normalizeTeamName(name);
-  return value.length >= 3 && value.length <= 20 && /^[A-Z0-9]+(?: [A-Z0-9]+)*$/.test(value);
+  const v = normalizeTeamName(name);
+  return v.length >= 3 && v.length <= 20 && /^[A-Z0-9]+(?: [A-Z0-9]+)*$/.test(v);
 };
 
-export const checkPlayerExists = (name: string): boolean => {
+export const checkPlayerExists = async (name: string): Promise<boolean> => {
   if (!name || name.trim().length < 2) return false;
-  const players = getPlayers();
-  return players.some(p => p.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const snap = await get(ref(db, `players/${toKey(name)}`));
+  return snap.exists();
 };
 
-export const registerOrGetPlayer = (name: string): PlayerStats => {
+export const registerOrGetPlayer = async (name: string): Promise<PlayerStats> => {
   const trimmedName = normalizePlayerName(name);
-  const players = getPlayers();
-  const found = players.find(p => p.name.toLowerCase() === trimmedName.toLowerCase());
-  if (found) {
-    return found;
-  }
+  const snap = await get(ref(db, `players/${toKey(trimmedName)}`));
+  if (snap.exists()) return snap.val() as PlayerStats;
   const newPlayer: PlayerStats = {
-    name: trimmedName,
-    runs: 0,
-    wickets: 0,
-    ballsPlayed: 0,
-    ballsThrown: 0,
-    matchPlayed: 0,
-    fours: 0,
-    sixes: 0
+    name: trimmedName, runs: 0, wickets: 0,
+    ballsPlayed: 0, ballsThrown: 0, matchPlayed: 0, fours: 0, sixes: 0
   };
-  players.push(newPlayer);
-  savePlayers(players);
+  await set(ref(db, `players/${toKey(trimmedName)}`), newPlayer);
   return newPlayer;
 };
 
-export const createPlayerAccount = (name: string): { ok: boolean; message: string; player?: PlayerStats } => {
+export const createPlayerAccount = async (
+  name: string
+): Promise<{ ok: boolean; message: string; player?: PlayerStats }> => {
   const playerName = normalizePlayerName(name);
-  if (!isValidPlayerName(playerName)) {
-    return { ok: false, message: 'Name must be at least 2 characters long.' };
-  }
-  const players = getPlayers();
-  const existing = players.find(p => p.name.toLowerCase() === playerName.toLowerCase());
-  if (existing) {
-    return { ok: false, message: 'This name is already registered.' };
-  }
+  if (!isValidPlayerName(playerName)) return { ok: false, message: 'Name must be at least 2 characters long.' };
+  const snap = await get(ref(db, `players/${toKey(playerName)}`));
+  if (snap.exists()) return { ok: false, message: 'This name is already registered.' };
   const account: PlayerStats = {
-    name: playerName,
-    teams: [],
-    matchIds: [],
-    runs: 0,
-    wickets: 0,
-    ballsPlayed: 0,
-    ballsThrown: 0,
-    matchPlayed: 0,
-    fours: 0,
-    sixes: 0
+    name: playerName, teams: [], matchIds: [],
+    runs: 0, wickets: 0, ballsPlayed: 0,
+    ballsThrown: 0, matchPlayed: 0, fours: 0, sixes: 0
   };
-  players.push(account);
-  savePlayers(players);
+  await set(ref(db, `players/${toKey(playerName)}`), account);
   return { ok: true, message: 'Profile created successfully.', player: account };
 };
 
-export const loginPlayerAccount = (name: string): { ok: boolean; message: string; player?: PlayerStats } => {
+export const loginPlayerAccount = async (
+  name: string
+): Promise<{ ok: boolean; message: string; player?: PlayerStats }> => {
   const playerName = normalizePlayerName(name);
-  const player = getPlayers().find(p => p.name.toLowerCase() === playerName.toLowerCase());
-  if (!player) return { ok: false, message: 'No profile found with this name.' };
-  return { ok: true, message: 'Welcome back.', player };
+  const snap = await get(ref(db, `players/${toKey(playerName)}`));
+  if (!snap.exists()) return { ok: false, message: 'No profile found with this name.' };
+  return { ok: true, message: 'Welcome back.', player: snap.val() };
 };
 
-export const getTeams = (): TeamData[] => {
-  const stored = localStorage.getItem(STORAGE_TEAMS_KEY);
-  if (!stored) return [];
-  try { return JSON.parse(stored); } catch { return []; }
-};
-
-export const saveTeams = (teams: TeamData[]) => {
-  localStorage.setItem(STORAGE_TEAMS_KEY, JSON.stringify(teams));
-};
-
-export const createTeam = (name: string): { ok: boolean; message: string; team?: TeamData } => {
-  const teamName = normalizeTeamName(name);
-  if (!isValidTeamName(teamName)) {
-    return { ok: false, message: 'Team name must be 3-20 chars, capital letters/numbers only, spaces allowed.' };
+export const updatePlayerStatsAfterMatch = async (
+  name: string,
+  statsDelta: Partial<PlayerStats>
+): Promise<void> => {
+  const key = toKey(name);
+  const snap = await get(ref(db, `players/${key}`));
+  if (snap.exists()) {
+    const p = snap.val() as PlayerStats;
+    await set(ref(db, `players/${key}`), {
+      ...p,
+      runs: p.runs + (statsDelta.runs || 0),
+      wickets: p.wickets + (statsDelta.wickets || 0),
+      ballsPlayed: p.ballsPlayed + (statsDelta.ballsPlayed || 0),
+      ballsThrown: p.ballsThrown + (statsDelta.ballsThrown || 0),
+      matchPlayed: p.matchPlayed + (statsDelta.matchPlayed || 0),
+      fours: p.fours + (statsDelta.fours || 0),
+      sixes: p.sixes + (statsDelta.sixes || 0),
+    });
+  } else {
+    await set(ref(db, `players/${key}`), { name, ...statsDelta });
   }
-  const teams = getTeams();
-  if (teams.some(team => team.name === teamName)) return { ok: false, message: 'Team already exists.' };
+};
+
+export const getTeams = async (): Promise<TeamData[]> => {
+  const snap = await get(ref(db, 'teams'));
+  if (!snap.exists()) return [];
+  return Object.values(snap.val()) as TeamData[];
+};
+
+export const saveTeams = async (teams: TeamData[]): Promise<void> => {
+  const updates: Record<string, TeamData> = {};
+  teams.forEach(t => { updates[toKey(t.name)] = t; });
+  await set(ref(db, 'teams'), updates);
+};
+
+export const createTeam = async (
+  name: string
+): Promise<{ ok: boolean; message: string; team?: TeamData }> => {
+  const teamName = normalizeTeamName(name);
+  if (!isValidTeamName(teamName)) return { ok: false, message: 'Team name must be 3-20 chars, capital letters/numbers only.' };
+  const snap = await get(ref(db, `teams/${toKey(teamName)}`));
+  if (snap.exists()) return { ok: false, message: 'Team already exists.' };
   const team: TeamData = { name: teamName, players: [], matchIds: [], createdAt: Date.now() };
-  teams.push(team);
-  saveTeams(teams);
+  await set(ref(db, `teams/${toKey(teamName)}`), team);
   return { ok: true, message: 'Team created.', team };
 };
 
-export const addPlayerToTeamRecord = (playerName: string, teamName: string) => {
-  const normalizedPlayer = normalizePlayerName(playerName);
-  const normalizedTeam = normalizeTeamName(teamName);
-  const teams = getTeams();
-  const teamIndex = teams.findIndex(team => team.name === normalizedTeam);
-  if (teamIndex >= 0 && !teams[teamIndex].players.includes(normalizedPlayer)) {
-    teams[teamIndex].players.push(normalizedPlayer);
-    saveTeams(teams);
+export const addPlayerToTeamRecord = async (
+  playerName: string, teamName: string
+): Promise<void> => {
+  const np = normalizePlayerName(playerName);
+  const nt = normalizeTeamName(teamName);
+  const teamSnap = await get(ref(db, `teams/${toKey(nt)}`));
+  if (teamSnap.exists()) {
+    const team = teamSnap.val() as TeamData;
+    if (!team.players) team.players = [];
+    if (!team.players.includes(np)) {
+      team.players.push(np);
+      await set(ref(db, `teams/${toKey(nt)}`), team);
+    }
   }
-  const players = getPlayers();
-  const playerIndex = players.findIndex(player => player.name.toLowerCase() === normalizedPlayer.toLowerCase());
-  if (playerIndex >= 0) {
-    const playerTeams = players[playerIndex].teams || [];
-    if (!playerTeams.includes(normalizedTeam)) {
-      players[playerIndex] = { ...players[playerIndex], teams: [...playerTeams, normalizedTeam] };
-      savePlayers(players);
+  const playerSnap = await get(ref(db, `players/${toKey(np)}`));
+  if (playerSnap.exists()) {
+    const player = playerSnap.val() as PlayerStats;
+    const playerTeams = player.teams || [];
+    if (!playerTeams.includes(nt)) {
+      await set(ref(db, `players/${toKey(np)}`), { ...player, teams: [...playerTeams, nt] });
     }
   }
 };
 
-export const getMatches = (): MatchData[] => {
-  const stored = localStorage.getItem(STORAGE_MATCHES_KEY);
-  if (!stored) return [];
-  try {
-    return JSON.parse(stored);
-  } catch (e) {
-    return [];
-  }
+export const getMatches = async (): Promise<MatchData[]> => {
+  const snap = await get(ref(db, 'matches'));
+  if (!snap.exists()) return [];
+  return Object.values(snap.val()) as MatchData[];
 };
 
-export const saveMatches = (matches: MatchData[]) => {
-  localStorage.setItem(STORAGE_MATCHES_KEY, JSON.stringify(matches));
+export const saveMatch = async (match: MatchData): Promise<void> => {
+  const matchId = (match as any).id ?? (match as any).matchId;
+  await set(ref(db, `matches/${matchId}`), match);
 };
 
-export const saveMatch = (match: MatchData) => {
-  const matches = getMatches();
-  const index = matches.findIndex(m => m.id === match.id);
-  if (index >= 0) {
-    matches[index] = match;
-  } else {
-    matches.push(match);
-  }
-  saveMatches(matches);
-};
-
-export const updatePlayerStatsAfterMatch = (
-  name: string,
-  statsDelta: Partial<PlayerStats>
-) => {
-  const players = getPlayers();
-  const index = players.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-  if (index >= 0) {
-    players[index] = {
-      ...players[index],
-      runs: players[index].runs + (statsDelta.runs || 0),
-      wickets: players[index].wickets + (statsDelta.wickets || 0),
-      ballsPlayed: players[index].ballsPlayed + (statsDelta.ballsPlayed || 0),
-      ballsThrown: players[index].ballsThrown + (statsDelta.ballsThrown || 0),
-      matchPlayed: players[index].matchPlayed + (statsDelta.matchPlayed || 0),
-      fours: players[index].fours + (statsDelta.fours || 0),
-      sixes: players[index].sixes + (statsDelta.sixes || 0),
-    };
-  } else {
-    // If somehow not registered yet
-    players.push({
-      name,
-      runs: statsDelta.runs || 0,
-      wickets: statsDelta.wickets || 0,
-      ballsPlayed: statsDelta.ballsPlayed || 0,
-      ballsThrown: statsDelta.ballsThrown || 0,
-      matchPlayed: statsDelta.matchPlayed || 0,
-      fours: statsDelta.fours || 0,
-      sixes: statsDelta.sixes || 0,
-    });
-  }
-  savePlayers(players);
-};
-
-export const assignMatchToPlayersAndTeams = (match: MatchData) => {
+export const assignMatchToPlayersAndTeams = async (match: MatchData): Promise<void> => {
+  const matchId = (match as any).id ?? (match as any).matchId;
   const teamNames = [normalizeTeamName(match.teamA), normalizeTeamName(match.teamB)];
   const playerNames = [...match.teamAPlayers, ...match.teamBPlayers].map(normalizePlayerName);
-  const teams = getTeams();
-  teamNames.forEach(teamName => {
-    const index = teams.findIndex(team => team.name === teamName);
-    if (index >= 0 && match.id && !teams[index].matchIds.includes(match.id)) {
-      teams[index].matchIds.push(match.id);
-    }
-  });
-  saveTeams(teams);
 
-  const players = getPlayers();
-  playerNames.forEach(playerName => {
-    const index = players.findIndex(player => player.name.toLowerCase() === playerName.toLowerCase());
-    if (index >= 0) {
-      const matchIds = players[index].matchIds || [];
-      if (match.id && !matchIds.includes(match.id)) {
-        players[index] = { ...players[index], matchIds: [...matchIds, match.id] };
+  for (const teamName of teamNames) {
+    const snap = await get(ref(db, `teams/${toKey(teamName)}`));
+    if (snap.exists()) {
+      const team = snap.val() as TeamData;
+      const matchIds = team.matchIds || [];
+      if (matchId && !matchIds.includes(matchId)) {
+        await set(ref(db, `teams/${toKey(teamName)}`), { ...team, matchIds: [...matchIds, matchId] });
       }
     }
-  });
-  savePlayers(players);
+  }
+
+  for (const playerName of playerNames) {
+    const snap = await get(ref(db, `players/${toKey(playerName)}`));
+    if (snap.exists()) {
+      const player = snap.val() as PlayerStats;
+      const matchIds = player.matchIds || [];
+      if (matchId && !matchIds.includes(matchId)) {
+        await set(ref(db, `players/${toKey(playerName)}`), { ...player, matchIds: [...matchIds, matchId] });
+      }
+    }
+  }
 };
 
 export const generateMatchCredentials = (): { id: string; password: string } => {
-  const digits = Math.floor(10000000 + Math.random() * 90000000).toString(); // 8 digits
+  const digits = Math.floor(10000000 + Math.random() * 90000000).toString();
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   let password = '';
-  for (let i = 0; i < 6; i++) {
-    password += letters.charAt(Math.floor(Math.random() * letters.length));
-  }
+  for (let i = 0; i < 6; i++) password += letters.charAt(Math.floor(Math.random() * letters.length));
   return { id: digits, password };
 };
