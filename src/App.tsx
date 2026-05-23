@@ -11,7 +11,7 @@ import {
 } from './types/cricket';
 import { playClickSound, playStartupSound, playSuccessSound } from './utils/audio';
 import { 
-  getPlayers, checkPlayerExists, 
+  getPlayers, 
   getMatches, saveMatch, generateMatchCredentials, updatePlayerStatsAfterMatch,
   createPlayerAccount, loginPlayerAccount, getTeams, createTeam,
   addPlayerToTeamRecord, assignMatchToPlayersAndTeams, normalizeTeamName
