@@ -25,7 +25,8 @@ export const getPlayers = async (): Promise<PlayerStats[]> => {
     await set(ref(db, 'players'), updates);
     return DEFAULT_PLAYERS;
   }
-  return Object.values(snap.val()) as PlayerStats[];
+  const players = Object.values(snap.val()) as PlayerStats[];
+  return players.map(p => ({ ...p, teams: p.teams || [], matchIds: p.matchIds || [] }));
 };
 
 export const savePlayers = async (players: PlayerStats[]): Promise<void> => {
@@ -111,7 +112,8 @@ export const updatePlayerStatsAfterMatch = async (
 export const getTeams = async (): Promise<TeamData[]> => {
   const snap = await get(ref(db, 'teams'));
   if (!snap.exists()) return [];
-  return Object.values(snap.val()) as TeamData[];
+  const teams = Object.values(snap.val()) as TeamData[];
+  return teams.map(t => ({ ...t, players: t.players || [], matchIds: t.matchIds || [] }));
 };
 
 export const saveTeams = async (teams: TeamData[]): Promise<void> => {
